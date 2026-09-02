@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+psycopg[binary]
+python-dotenv
+boto3
+google-auth
+requests
+python-multipart
+Pillow
+
+PyJWT[crypto]
