@@ -24,3 +24,13 @@ services:
         sync: false
       - key: R2_ENDPOINT
         sync: false
+
+  - type: cron
+    name: toaster-daily-ranking
+    runtime: python
+    schedule: "0 15 * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python snapshot_daily_ranking.py
+    envVars:
+      - key: DATABASE_URL
+        sync: false
