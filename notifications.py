@@ -435,3 +435,20 @@ def delete_device_token(
     return {
         "deleted": True,
     }
+
+@router.post("/test/{user_id}")
+def send_test_notification(
+    user_id: int,
+):
+    sent_count = send_push_notification(
+        user_id=user_id,
+        title="TOASTER テスト通知",
+        body="通知機能が正常に動作しています。",
+        data={
+            "type": "test",
+        },
+    )
+
+    return {
+        "sent_count": sent_count,
+    }
