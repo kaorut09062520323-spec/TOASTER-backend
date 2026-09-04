@@ -53,6 +53,31 @@ def ensure_notification_tables() -> None:
                 """
             )
 
+            # A device token belongs to exactly one logged-in user on this
+            # backend. Older versions only enforced UNIQUE(user_id, token),
+            # which allowed the same physical device token to be registered
+            # under multiple users.
+            #
+            # Remove old duplicates first, keeping the newest registration
+            # for each token. This makes it safe to add the global unique
+            # index below on an already-deployed database.
+            cur.execute(
+                """
+                DELETE FROM device_tokens older
+                USING device_tokens newer
+                WHERE older.token = newer.token
+                AND older.id < newer.id
+                """
+            )
+
+            cur.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS
+                idx_device_tokens_token_unique
+                ON device_tokens(token);
+                """
+            )
+
             cur.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_device_tokens_user_id
@@ -382,6 +407,10 @@ def register_device_token(
                     detail="user not found",
                 )
 
+            # A device token belongs to exactly one currently logged-in
+            # user. The global UNIQUE(token) index makes this an atomic
+            # upsert, so logging in as another user moves the token instead
+            # of leaving it registered under both users.
             cur.execute(
                 """
                 INSERT INTO device_tokens (
@@ -389,11 +418,8 @@ def register_device_token(
                     token
                 )
                 VALUES (%s, %s)
-                ON CONFLICT (
-                    user_id,
-                    token
-                )
-                DO NOTHING
+                ON CONFLICT (token)
+                DO UPDATE SET user_id = EXCLUDED.user_id
                 """,
                 (
                     data.user_id,
@@ -436,66 +462,21 @@ def delete_device_token(
         "deleted": True,
     }
 
+
 @router.post("/test/{user_id}")
 def send_test_notification(
     user_id: int,
 ):
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT token
-                FROM device_tokens
-                WHERE user_id = %s
-                """,
-                (user_id,),
-            )
 
-            tokens = [
-                row[0]
-                for row in cur.fetchall()
-            ]
-
-    if not tokens:
-        return {
-            "user_id": user_id,
-            "token_count": 0,
-            "sent_count": 0,
-            "error": "No device token registered",
-        }
-
-    results = []
-
-    for token in tokens:
-        try:
-            success = _send_to_apns(
-                token=token,
-                title="TOASTER テスト通知",
-                body="通知機能が正常に動作しています。",
-                data={
-                    "type": "test",
-                },
-            )
-
-            results.append({
-                "success": success,
-            })
-
-        except Exception as error:
-            results.append({
-                "success": False,
-                "error": str(error),
-            })
-
-    sent_count = sum(
-        1
-        for result in results
-        if result["success"]
+    sent_count = send_push_notification(
+        user_id=user_id,
+        title="TOASTER テスト通知",
+        body="通知機能が正常に動作しています。",
+        data={
+            "type": "test",
+        },
     )
 
     return {
-        "user_id": user_id,
-        "token_count": len(tokens),
         "sent_count": sent_count,
-        "results": results,
     }
