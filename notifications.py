@@ -440,15 +440,62 @@ def delete_device_token(
 def send_test_notification(
     user_id: int,
 ):
-    sent_count = send_push_notification(
-        user_id=user_id,
-        title="TOASTER テスト通知",
-        body="通知機能が正常に動作しています。",
-        data={
-            "type": "test",
-        },
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT token
+                FROM device_tokens
+                WHERE user_id = %s
+                """,
+                (user_id,),
+            )
+
+            tokens = [
+                row[0]
+                for row in cur.fetchall()
+            ]
+
+    if not tokens:
+        return {
+            "user_id": user_id,
+            "token_count": 0,
+            "sent_count": 0,
+            "error": "No device token registered",
+        }
+
+    results = []
+
+    for token in tokens:
+        try:
+            success = _send_to_apns(
+                token=token,
+                title="TOASTER テスト通知",
+                body="通知機能が正常に動作しています。",
+                data={
+                    "type": "test",
+                },
+            )
+
+            results.append({
+                "success": success,
+            })
+
+        except Exception as error:
+            results.append({
+                "success": False,
+                "error": str(error),
+            })
+
+    sent_count = sum(
+        1
+        for result in results
+        if result["success"]
     )
 
     return {
+        "user_id": user_id,
+        "token_count": len(tokens),
         "sent_count": sent_count,
+        "results": results,
     }
