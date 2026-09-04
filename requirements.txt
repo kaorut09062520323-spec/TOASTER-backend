@@ -9,3 +9,4 @@ python-multipart
 Pillow
 
 PyJWT[crypto]
+httpx[http2]

@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS posts (
     content TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
 ALTER TABLE posts
 ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'fashion';
 
@@ -186,6 +187,23 @@ VALUES
     ('spot_top', 'Spot TOP', 'その日のSpotランキング1位', '📍', TRUE),
     ('early_member', '始まりのユーザー', 'TOASTER初期メンバー限定の称号', '🌱', TRUE)
 ON CONFLICT (achievement_type) DO NOTHING;
+
+
+-- ============================================================
+-- Notifications
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS device_tokens (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE(user_id, token)
+);
+
+CREATE INDEX IF NOT EXISTS idx_device_tokens_user_id
+ON device_tokens(user_id);
 
 """
 

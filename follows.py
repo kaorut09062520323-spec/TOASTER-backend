@@ -1,13 +1,20 @@
 from fastapi import APIRouter, HTTPException
 
 from database import get_connection
+from notifications import send_push_notification
 
 
-router = APIRouter(prefix="/users", tags=["follows"])
+router = APIRouter(
+    prefix="/users",
+    tags=["follows"],
+)
 
 
 @router.post("/{user_id}/follow/{target_user_id}")
-def follow_user(user_id: int, target_user_id: int):
+def follow_user(
+    user_id: int,
+    target_user_id: int,
+):
 
     if user_id == target_user_id:
         raise HTTPException(
@@ -18,7 +25,6 @@ def follow_user(user_id: int, target_user_id: int):
     with get_connection() as conn:
         with conn.cursor() as cur:
 
-            # フォローするユーザー
             cur.execute(
                 """
                 SELECT id
@@ -34,23 +40,23 @@ def follow_user(user_id: int, target_user_id: int):
                     detail="user not found",
                 )
 
-            # フォローされるユーザー
             cur.execute(
                 """
-                SELECT id
+                SELECT id, display_name
                 FROM users
                 WHERE id = %s
                 """,
                 (target_user_id,),
             )
 
-            if cur.fetchone() is None:
+            target_user = cur.fetchone()
+
+            if target_user is None:
                 raise HTTPException(
                     status_code=404,
                     detail="target user not found",
                 )
 
-            # すでにフォローしているか
             cur.execute(
                 """
                 SELECT id
@@ -58,7 +64,10 @@ def follow_user(user_id: int, target_user_id: int):
                 WHERE follower_id = %s
                   AND following_id = %s
                 """,
-                (user_id, target_user_id),
+                (
+                    user_id,
+                    target_user_id,
+                ),
             )
 
             if cur.fetchone() is not None:
@@ -67,7 +76,6 @@ def follow_user(user_id: int, target_user_id: int):
                     detail="already following",
                 )
 
-            # フォロー
             cur.execute(
                 """
                 INSERT INTO follows (
@@ -76,8 +84,21 @@ def follow_user(user_id: int, target_user_id: int):
                 )
                 VALUES (%s, %s)
                 """,
-                (user_id, target_user_id),
+                (
+                    user_id,
+                    target_user_id,
+                ),
             )
+
+    send_push_notification(
+        target_user_id,
+        "フォロー",
+        "あなたをフォローしました。",
+        data={
+            "user_id": user_id,
+            "type": "follow",
+        },
+    )
 
     return {
         "user_id": user_id,
@@ -87,7 +108,10 @@ def follow_user(user_id: int, target_user_id: int):
 
 
 @router.delete("/{user_id}/follow/{target_user_id}")
-def unfollow_user(user_id: int, target_user_id: int):
+def unfollow_user(
+    user_id: int,
+    target_user_id: int,
+):
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -99,7 +123,10 @@ def unfollow_user(user_id: int, target_user_id: int):
                   AND following_id = %s
                 RETURNING id
                 """,
-                (user_id, target_user_id),
+                (
+                    user_id,
+                    target_user_id,
+                ),
             )
 
             deleted = cur.fetchone()
