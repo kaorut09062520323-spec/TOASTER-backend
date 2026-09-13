@@ -3,7 +3,7 @@ from fastapi import APIRouter
 router = APIRouter(prefix="/ranking-rules", tags=["ranking-rules"])
 
 RANKING_RULES = {
-    "title": "ランキングの決定方法",
+    "title": "ランキングのルール",
     "rules": [
         {
             "number": 1,
