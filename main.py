@@ -15,6 +15,7 @@ from likes import router as likes_router
 from follows import router as follows_router
 from comments import router as comments_router
 from ranking import router as ranking_router
+from ranking_rules import router as ranking_rules_router
 from achievements import router as achievements_router
 from moderation import router as moderation_router
 from messages import router as messages_router
@@ -34,6 +35,7 @@ PUBLIC_API_PATHS = (
     "/terms",
     "/support",
     "/campaigns",
+    "/ranking-rules",
     "/",
     "/docs",
     "/openapi.json",
@@ -218,6 +220,7 @@ app.include_router(likes_router)
 app.include_router(follows_router)
 app.include_router(comments_router)
 app.include_router(ranking_router)
+app.include_router(ranking_rules_router)
 app.include_router(achievements_router)
 app.include_router(moderation_router)
 app.include_router(messages_router)
@@ -583,7 +586,8 @@ def terms_of_service():
         </p>
 
         <p>
-            キャンペーンの対象となるランキングの順位は、TOASTERが定めるランキングの集計結果に基づいて決定します。
+            キャンペーンの対象となるランキングの順位は、TOASTERが定める「ランキングの決定方法」に基づく集計結果に基づいて決定します。
+            ランキング確定後に対象投稿が削除された場合でも、確定した順位は繰り上げず、当該順位を「deleted」として表示します。
             不正な操作、複数アカウントの不正利用、その他キャンペーンの趣旨または本規約に反する行為が確認された場合、
             受賞資格を取り消し、賞金の支払いを行わない、または支払済みの賞金について返還を求める場合があります。
         </p>
@@ -662,6 +666,7 @@ def terms_of_service():
 @app.get(
     "/support",
     "/campaigns",
+    "/ranking-rules",
     response_class=HTMLResponse
 )
 def support_page():
