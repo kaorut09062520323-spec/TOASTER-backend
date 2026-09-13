@@ -438,7 +438,6 @@ def get_post(
                 JOIN users u
                     ON u.id = p.user_id
                 WHERE p.id = %s
-                  AND p.expires_at > CURRENT_TIMESTAMP
                 """,
                 (post_id,),
             )

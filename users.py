@@ -521,7 +521,6 @@ def get_user_posts(user_id: int):
                 FROM posts p
                 JOIN users u ON u.id = p.user_id
                 WHERE p.user_id = %s
-                  AND p.expires_at > CURRENT_TIMESTAMP
                 ORDER BY p.created_at DESC
                 """,
                 (user_id,),

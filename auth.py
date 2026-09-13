@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header, Depends
 from google.oauth2 import id_token
 from google.auth.transport import requests
 from pydantic import BaseModel
@@ -25,6 +25,62 @@ APPLE_ISSUER = "https://appleid.apple.com"
 APPLE_KEYS_URL = f"{APPLE_ISSUER}/auth/keys"
 apple_jwk_client = PyJWKClient(APPLE_KEYS_URL)
 
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRES_DAYS = int(os.getenv("TOASTER_JWT_EXPIRES_DAYS", "30"))
+
+
+def _jwt_secret() -> str:
+    secret = os.getenv("TOASTER_JWT_SECRET")
+    if not secret:
+        raise HTTPException(
+            status_code=500,
+            detail="TOASTER_JWT_SECRET is not configured",
+        )
+    return secret
+
+
+def create_access_token(user_id: int) -> str:
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": str(user_id),
+        "iat": now,
+        "exp": now + timedelta(days=JWT_EXPIRES_DAYS),
+        "type": "access",
+    }
+    return jwt.encode(payload, _jwt_secret(), algorithm=JWT_ALGORITHM)
+
+
+def verify_access_token(token: str) -> int:
+    try:
+        claims = jwt.decode(
+            token,
+            _jwt_secret(),
+            algorithms=[JWT_ALGORITHM],
+            options={"require": ["sub", "iat", "exp", "type"]},
+        )
+        if claims.get("type") != "access":
+            raise ValueError("invalid token type")
+        user_id = int(claims["sub"])
+    except (jwt.PyJWTError, ValueError, TypeError, HTTPException):
+        raise HTTPException(status_code=401, detail="Invalid or expired access token")
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM users WHERE id = %s", (user_id,))
+            if cur.fetchone() is None:
+                raise HTTPException(status_code=401, detail="User no longer exists")
+
+    return user_id
+
+
+def get_current_user_id(authorization: str | None = Header(default=None)) -> int:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Authorization required")
+    return verify_access_token(authorization[7:].strip())
+
+
 # During the initial launch period, new registrations receive the one-time
 # "始まりのユーザー" achievement.
 EARLY_MEMBER_ENABLED = os.getenv(
@@ -35,12 +91,14 @@ EARLY_MEMBER_ENABLED = os.getenv(
 
 class GoogleLoginRequest(BaseModel):
     id_token: str
+    create_account: bool = True
 
 
 class AppleLoginRequest(BaseModel):
     identity_token: str
     nonce: str
     display_name: str | None = None
+    create_account: bool = True
 
 
 def _create_user_and_auth_account(
@@ -145,6 +203,18 @@ def google_login(data: GoogleLoginRequest):
                 return {
                     "user_id": user_id,
                     "is_new_user": False,
+                    "access_token": create_access_token(user_id),
+                    "token_type": "Bearer",
+                }
+
+            if not data.create_account:
+                # Identity is verified, but account creation waits for
+                # explicit acceptance of the Terms and Privacy Policy.
+                return {
+                    "user_id": 0,
+                    "is_new_user": True,
+                    "access_token": "",
+                    "token_type": "Bearer",
                 }
 
             user_id = _create_user_and_auth_account(
@@ -158,6 +228,8 @@ def google_login(data: GoogleLoginRequest):
     return {
         "user_id": user_id,
         "is_new_user": True,
+        "access_token": create_access_token(user_id),
+        "token_type": "Bearer",
     }
 
 
@@ -249,6 +321,8 @@ def apple_login(data: AppleLoginRequest):
                 return {
                     "user_id": user_id,
                     "is_new_user": False,
+                    "access_token": create_access_token(user_id),
+                    "token_type": "Bearer",
                 }
 
             # Apple supplies the user's name only during the first
@@ -258,6 +332,16 @@ def apple_login(data: AppleLoginRequest):
                 (data.display_name or "").strip()
                 or "Apple User"
             )
+
+            if not data.create_account:
+                # Identity is verified, but account creation waits for
+                # explicit acceptance of the Terms and Privacy Policy.
+                return {
+                    "user_id": 0,
+                    "is_new_user": True,
+                    "access_token": "",
+                    "token_type": "Bearer",
+                }
 
             user_id = _create_user_and_auth_account(
                 cur=cur,
@@ -270,4 +354,17 @@ def apple_login(data: AppleLoginRequest):
     return {
         "user_id": user_id,
         "is_new_user": True,
+        "access_token": create_access_token(user_id),
+        "token_type": "Bearer",
     }
+
+
+@router.get("/me")
+def get_me(current_user_id: int = Depends(get_current_user_id)):
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, display_name FROM users WHERE id = %s", (current_user_id,))
+            row = cur.fetchone()
+            if row is None:
+                raise HTTPException(status_code=401, detail="User no longer exists")
+    return {"user_id": row[0], "display_name": row[1]}

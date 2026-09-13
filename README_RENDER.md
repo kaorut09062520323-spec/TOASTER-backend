@@ -21,3 +21,13 @@ After deployment, verify:
 - `/db-test`
 
 `/db-test` requires `DATABASE_URL` and is useful for confirming PostgreSQL connectivity.
+
+## Authentication environment variables
+
+The API now issues TOASTER access JWTs after Google/Apple login and requires a
+Bearer token for protected API requests.
+
+Set these Render environment variables on the web service:
+
+- `TOASTER_JWT_SECRET`: long random secret; keep this private and stable.
+- `TOASTER_JWT_EXPIRES_DAYS`: optional, defaults to `30`.
